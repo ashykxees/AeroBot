@@ -25,8 +25,10 @@ const {
 // Config
 // ---------------------------------------------------------------------------
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const ALLOWED_GUILD_ID = process.env.ALLOWED_GUILD_ID || '1531847605645082664';
-const ALLOWED_ROLE_IDS = (process.env.ALLOWED_ROLE_IDS || '1531861205470416936,1531860536193450174,1531860022814965902')
+const ALLOWED_GUILD_ID = process.env.ALLOWED_GUILD_ID || process.env.GUILD_ID || '1531847605645082664';
+const DEFAULT_ROLE_IDS = '1531861205470416936,1531860536193450174,1531860022814965902';
+const rawAllowedRoles = process.env.ALLOWED_ROLE_IDS || process.env.STAFF_ROLE_ID || DEFAULT_ROLE_IDS;
+const ALLOWED_ROLE_IDS = rawAllowedRoles
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
