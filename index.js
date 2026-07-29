@@ -208,7 +208,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('ban')
     .setDescription('Ban a user and DM them the reason.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
     .addUserOption((opt) =>
       opt.setName('user').setDescription('User to ban.').setRequired(true),
     )
@@ -218,7 +217,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('kick')
     .setDescription('Kick a user and DM them the reason.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers)
     .addUserOption((opt) =>
       opt.setName('user').setDescription('User to kick.').setRequired(true),
     )
@@ -228,7 +226,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('timeout')
     .setDescription('Timeout a user and DM them the reason and duration.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
     .addUserOption((opt) =>
       opt.setName('user').setDescription('User to timeout.').setRequired(true),
     )
@@ -244,7 +241,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('dm')
     .setDescription('DM a specified user with an embed.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addUserOption((opt) =>
       opt
         .setName('user')
@@ -260,7 +256,6 @@ const commands = [
   new SlashCommandBuilder()
     .setName('avatar')
     .setDescription('View Roblox account info and avatar.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((opt) =>
       opt
         .setName('roblox_user')

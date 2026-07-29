@@ -14,6 +14,18 @@ AeroPulse Studios Discord bot with moderation, support tickets, Roblox avatars, 
    npm start
    ```
 
+## Inviting the bot
+
+Your invite link must include the `bot` **and** `applications.commands` scopes, plus the permissions the bot needs (Ban, Kick, Moderate, Manage Channels, Send Messages, etc.):
+
+```
+https://discord.com/oauth2/authorize?client_id=YOUR_APP_ID&scope=bot+applications.commands&permissions=274878197248
+```
+
+Replace `YOUR_APP_ID` with your bot’s Application ID from the Discord Developer Portal.
+
+> The bot automatically registers slash commands in `ALLOWED_GUILD_ID` once it logs in. If commands don’t appear, make sure the bot is in the server and the invite included `applications.commands`.
+
 ## Commands
 
 - `/ban <user> <reason>` — Ban a user and DM them the reason.
@@ -37,16 +49,23 @@ Optional (the guild and role defaults are already set to the AeroPulse server/ro
 - `STAFF_ROLE_ID` — Staff role mentioned on new tickets.
 - `EXP_CHANNEL_ID` — Channel for hourly EXP drops.
 
-## Render
+## Hosting
 
+### Railway
+1. Connect the `ashykxees/AeroBot` GitHub repo to Railway.
+2. Create a new service and set the start command to `npm start`.
+3. Add the environment variables above.
+4. Make the service private (no public domain/port).
+
+### Render
 This repo includes `render.yaml` for a **Background Worker**.
 
-### New service (recommended)
+#### New service (recommended)
 1. In Render, choose **Blueprint** and select this repo.
 2. Enter the environment variables when prompted.
 3. Deploy.
 
-### Existing service
+#### Existing service
 If you already created the service and see a `go build` error, the service Runtime is set to **Go**:
 1. In the Render dashboard, go to **Settings**.
 2. Change **Runtime** to **Node**.
