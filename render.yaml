@@ -1,0 +1,22 @@
+services:
+  - type: worker
+    name: aerobot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: ALLOWED_GUILD_ID
+        sync: false
+      - key: GUILD_ID
+        sync: false
+      - key: ALLOWED_ROLE_IDS
+        sync: false
+      - key: STAFF_ROLE_ID
+        sync: false
+      - key: TICKET_CATEGORY_ID
+        sync: false
+      - key: EXP_CHANNEL_ID
+        sync: false
