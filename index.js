@@ -34,7 +34,10 @@ const ALLOWED_ROLE_IDS = rawAllowedRoles
   .map((s) => s.trim())
   .filter(Boolean);
 const TICKET_CATEGORY_ID = process.env.TICKET_CATEGORY_ID || '';
-const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID || '';
+const STAFF_ROLE_IDS = (process.env.STAFF_ROLE_ID || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 const EXP_CHANNEL_ID = process.env.EXP_CHANNEL_ID || '';
 const TICKET_PANEL_CHANNEL_ID = process.env.TICKET_PANEL_CHANNEL_ID || '1532222077480730744';
 
@@ -680,9 +683,9 @@ async function handleModal(interaction) {
       { id: guild.id, type: OverwriteType.Role, deny: [PermissionFlagsBits.ViewChannel] },
       { id: user.id, type: OverwriteType.Member, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
     ];
-    if (STAFF_ROLE_ID) {
+    for (const roleId of STAFF_ROLE_IDS) {
       permissionOverwrites.push({
-        id: STAFF_ROLE_ID,
+        id: roleId,
         type: OverwriteType.Role,
         allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
       });
@@ -744,7 +747,9 @@ async function handleModal(interaction) {
       .setTimestamp();
 
     const mentionParts = [user.toString()];
-    if (STAFF_ROLE_ID) mentionParts.push(`<@&${STAFF_ROLE_ID}>`);
+    for (const roleId of STAFF_ROLE_IDS) {
+      mentionParts.push(`<@&${roleId}>`);
+    }
     await ticketChannel.send({ content: mentionParts.join(' '), embeds: [ticketEmbed] });
     return safeReply(interaction, { content: `Ticket created: ${ticketChannel}` });
   } catch (err) {

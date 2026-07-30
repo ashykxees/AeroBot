@@ -46,7 +46,7 @@ Optional (the guild and role defaults are already set to the AeroPulse server/ro
 - `ALLOWED_GUILD_ID` (or `GUILD_ID`) — Server the bot operates in.
 - `ALLOWED_ROLE_IDS` — Comma-separated staff role IDs for restricted commands. Falls back to `STAFF_ROLE_ID` if not set.
 - `TICKET_CATEGORY_ID` — Category for new ticket channels.
-- `STAFF_ROLE_ID` — Staff role mentioned on new tickets.
+- `STAFF_ROLE_ID` — Comma-separated staff role IDs mentioned on new tickets.
 - `EXP_CHANNEL_ID` — Channel for hourly EXP drops.
 - `TICKET_PANEL_CHANNEL_ID` — Channel where the ticket panel is auto-posted on startup (defaults to `1532222077480730744`).
 
