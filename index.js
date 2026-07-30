@@ -75,74 +75,6 @@ function hasAllowedRole(member) {
   return ALLOWED_ROLE_IDS.some((id) => member.roles.cache.has(id));
 }
 
-function botHighestPosition(guild) {
-  return guild.members.me?.roles?.highest?.position ?? 0;
-}
-
-function canModerateActor(actor, target) {
-  if (actor.id === actor.guild.ownerId) return true;
-  if (target.id === target.guild.ownerId) return false;
-  const actorPos = actor.roles.highest.position;
-  const targetPos = target.roles?.highest?.position ?? 0;
-  return actorPos > targetPos;
-}
-
-function canBotAct(guild, targetMember) {
-  const botPos = botHighestPosition(guild);
-  if (!targetMember || !targetMember.roles) return true;
-  if (targetMember.id === guild.ownerId) return false;
-  return botPos > targetMember.roles.highest.position;
-}
-
-function parseDuration(input) {
-  const str = String(input || '').trim();
-  const match = str.match(/^(\d+(?:\.\d+)?)\s*([a-zA-Z]*)$/);
-  if (!match) return null;
-  const value = parseFloat(match[1]);
-  const unit = match[2].toLowerCase();
-  const multipliers = {
-    s: 1000,
-    sec: 1000,
-    secs: 1000,
-    second: 1000,
-    seconds: 1000,
-    m: 60000,
-    min: 60000,
-    mins: 60000,
-    minute: 60000,
-    minutes: 60000,
-    h: 3600000,
-    hr: 3600000,
-    hrs: 3600000,
-    hour: 3600000,
-    hours: 3600000,
-    d: 86400000,
-    day: 86400000,
-    days: 86400000,
-    w: 604800000,
-    week: 604800000,
-    weeks: 604800000,
-  };
-  const ms = multipliers[unit] || 60000;
-  return Math.round(value * ms);
-}
-
-function formatDuration(ms) {
-  const seconds = Math.floor(ms / 1000);
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  const h = Math.floor(m / 60);
-  const min = m % 60;
-  const d = Math.floor(h / 24);
-  const hr = h % 24;
-  const parts = [];
-  if (d) parts.push(`${d}d`);
-  if (hr) parts.push(`${hr}h`);
-  if (min) parts.push(`${min}m`);
-  if (s && !parts.length) parts.push(`${s}s`);
-  return parts.join(' ') || '0s';
-}
-
 function buildTicketPanel() {
   const embed = new EmbedBuilder()
     .setTitle('AeroPulse Studios tickets')
@@ -284,39 +216,6 @@ const client = new Client({
 // ---------------------------------------------------------------------------
 const commands = [
   new SlashCommandBuilder()
-    .setName('ban')
-    .setDescription('Ban a user and DM them the reason.')
-    .addUserOption((opt) =>
-      opt.setName('user').setDescription('User to ban.').setRequired(true),
-    )
-    .addStringOption((opt) =>
-      opt.setName('reason').setDescription('Ban reason.').setRequired(true),
-    ),
-  new SlashCommandBuilder()
-    .setName('kick')
-    .setDescription('Kick a user and DM them the reason.')
-    .addUserOption((opt) =>
-      opt.setName('user').setDescription('User to kick.').setRequired(true),
-    )
-    .addStringOption((opt) =>
-      opt.setName('reason').setDescription('Kick reason.').setRequired(true),
-    ),
-  new SlashCommandBuilder()
-    .setName('timeout')
-    .setDescription('Timeout a user and DM them the reason and duration.')
-    .addUserOption((opt) =>
-      opt.setName('user').setDescription('User to timeout.').setRequired(true),
-    )
-    .addStringOption((opt) =>
-      opt
-        .setName('duration')
-        .setDescription('Duration like 1h, 30m, 1d.')
-        .setRequired(true),
-    )
-    .addStringOption((opt) =>
-      opt.setName('reason').setDescription('Timeout reason.').setRequired(true),
-    ),
-  new SlashCommandBuilder()
     .setName('dm')
     .setDescription('DM a specified user with an embed.')
     .addUserOption((opt) =>
@@ -426,118 +325,17 @@ async function handleSlashCommand(interaction) {
       return safeReply(interaction, { content: 'Ticket panel posted.' });
     }
 
-    default: {
-      if (!hasAllowedRole(member)) {
-        return safeReply(interaction, { content: 'You do not have permission to use this command.' });
-      }
-      break;
-    }
+    default:
+      return safeReply(interaction, { content: 'Unknown command.' });
   }
 
-  // Moderation / staff commands
+  // Staff-only commands (dm, avatar)
+  if (!hasAllowedRole(member)) {
+    return safeReply(interaction, { content: 'You do not have permission to use this command.' });
+  }
+
   try {
     switch (commandName) {
-      case 'ban': {
-        const targetUser = interaction.options.getUser('user', true);
-        const reason = interaction.options.getString('reason', true);
-        const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
-
-        if (targetUser.id === guild.ownerId) {
-          return safeReply(interaction, { content: 'I cannot ban the server owner.' });
-        }
-        if (targetMember && !canModerateActor(member, targetMember)) {
-          return safeReply(interaction, { content: 'You cannot ban this user due to role hierarchy.' });
-        }
-        if (targetMember && !canBotAct(guild, targetMember)) {
-          return safeReply(interaction, { content: 'My role is too low to ban this user.' });
-        }
-
-        const dmEmbed = new EmbedBuilder()
-          .setTitle('You have been banned')
-          .setColor(0xed4245)
-          .setDescription(`You were banned from **${guild.name}**.`)
-          .addFields({ name: 'Reason', value: reason })
-          .setTimestamp();
-        await targetUser.send({ embeds: [dmEmbed] }).catch(() => {});
-
-        await guild.members.ban(targetUser, { reason });
-        return safeReply(interaction, { content: `Banned ${targetUser.tag}.` });
-      }
-
-      case 'kick': {
-        const targetUser = interaction.options.getUser('user', true);
-        const reason = interaction.options.getString('reason', true);
-        const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
-
-        if (!targetMember) {
-          return safeReply(interaction, { content: 'That user is not in the server.' });
-        }
-        if (targetMember.id === guild.ownerId) {
-          return safeReply(interaction, { content: 'I cannot kick the server owner.' });
-        }
-        if (!canModerateActor(member, targetMember)) {
-          return safeReply(interaction, { content: 'You cannot kick this user due to role hierarchy.' });
-        }
-        if (!canBotAct(guild, targetMember)) {
-          return safeReply(interaction, { content: 'My role is too low to kick this user.' });
-        }
-
-        const dmEmbed = new EmbedBuilder()
-          .setTitle('You have been kicked')
-          .setColor(0xed4245)
-          .setDescription(`You were kicked from **${guild.name}**.`)
-          .addFields({ name: 'Reason', value: reason })
-          .setTimestamp();
-        await targetUser.send({ embeds: [dmEmbed] }).catch(() => {});
-
-        await targetMember.kick(reason);
-        return safeReply(interaction, { content: `Kicked ${targetUser.tag}.` });
-      }
-
-      case 'timeout': {
-        const targetUser = interaction.options.getUser('user', true);
-        const durationInput = interaction.options.getString('duration', true);
-        const reason = interaction.options.getString('reason', true);
-        const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
-        const ms = parseDuration(durationInput);
-
-        if (!ms || ms <= 0) {
-          return safeReply(interaction, { content: 'Invalid duration. Use a format like `1h`, `30m`, or `1d`.' });
-        }
-        if (ms < 10000) {
-          return safeReply(interaction, { content: 'Timeout must be at least 10 seconds.' });
-        }
-        if (ms > 28 * 24 * 60 * 60 * 1000) {
-          return safeReply(interaction, { content: 'Timeout cannot exceed 28 days.' });
-        }
-        if (!targetMember) {
-          return safeReply(interaction, { content: 'That user is not in the server.' });
-        }
-        if (targetMember.id === guild.ownerId) {
-          return safeReply(interaction, { content: 'I cannot timeout the server owner.' });
-        }
-        if (!canModerateActor(member, targetMember)) {
-          return safeReply(interaction, { content: 'You cannot timeout this user due to role hierarchy.' });
-        }
-        if (!canBotAct(guild, targetMember)) {
-          return safeReply(interaction, { content: 'My role is too low to timeout this user.' });
-        }
-
-        const dmEmbed = new EmbedBuilder()
-          .setTitle('You have been timed out')
-          .setColor(0xfaa61a)
-          .setDescription(`You were timed out in **${guild.name}**.`)
-          .addFields(
-            { name: 'Reason', value: reason },
-            { name: 'Duration', value: formatDuration(ms) },
-          )
-          .setTimestamp();
-        await targetUser.send({ embeds: [dmEmbed] }).catch(() => {});
-
-        await targetMember.timeout(ms, reason);
-        return safeReply(interaction, { content: `Timed out ${targetUser.tag} for ${formatDuration(ms)}.` });
-      }
-
       case 'dm': {
         const targetUser = interaction.options.getUser('user', true);
         const message = interaction.options.getString('message', true);

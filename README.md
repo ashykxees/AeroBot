@@ -1,6 +1,6 @@
 # AeroBot
 
-AeroPulse Studios Discord bot with moderation, support tickets, Roblox avatars, and an hourly EXP drop/claim system.
+AeroPulse Studios Discord bot with support tickets, Roblox avatars, and an hourly EXP drop/claim system. Moderation commands now live in AeroModeration.
 
 ## Setup
 
@@ -16,10 +16,10 @@ AeroPulse Studios Discord bot with moderation, support tickets, Roblox avatars, 
 
 ## Inviting the bot
 
-Your invite link must include the `bot` **and** `applications.commands` scopes, plus the permissions the bot needs (Ban, Kick, Moderate, Manage Channels, Send Messages, etc.):
+Your invite link must include the `bot` **and** `applications.commands` scopes, plus permissions for Send Messages, Embed Links, Manage Channels, and Read Message History:
 
 ```
-https://discord.com/oauth2/authorize?client_id=YOUR_APP_ID&scope=bot+applications.commands&permissions=274878197248
+https://discord.com/oauth2/authorize?client_id=YOUR_APP_ID&scope=bot+applications.commands&permissions=2147511312
 ```
 
 Replace `YOUR_APP_ID` with your bot’s Application ID from the Discord Developer Portal.
@@ -28,14 +28,11 @@ Replace `YOUR_APP_ID` with your bot’s Application ID from the Discord Develope
 
 ## Commands
 
-- `/ban <user> <reason>` — Ban a user and DM them the reason.
-- `/kick <user> <reason>` — Kick a user and DM them the reason.
-- `/timeout <user> <duration> <reason>` — Timeout a user and DM them the reason and duration.
-- `/dm <user> <message>` — DM a user with an embed.
-- `/avatar <roblox-username>` — Show Roblox account info and avatar.
+- `/dm <user> <message>` — DM a user with an embed (staff roles only).
+- `/avatar <roblox-username>` — Show Roblox account info and avatar (staff roles only).
 - `/rank` — Show your server EXP rank (open to all members).
 - `/ping` — Show bot latency (open to all members).
-- `/ticket` — Post the support ticket panel.
+- `/ticket` — Post the support ticket panel (open to all members).
 
 ## Environment variables
 
