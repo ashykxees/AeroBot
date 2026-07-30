@@ -687,14 +687,39 @@ async function handleModal(interaction) {
     }
 
     let ticketChannel;
+    let parentError = null;
+    const channelProps = {
+      name: channelName || 'ticket',
+      type: ChannelType.GuildText,
+      permissionOverwrites,
+      reason: `Ticket created by ${user.tag}`,
+    };
+
     if (TICKET_CATEGORY_ID) {
-      ticketChannel = await guild.channels.create({
-        name: channelName || 'ticket',
-        type: ChannelType.GuildText,
-        parent: TICKET_CATEGORY_ID,
-        permissionOverwrites,
-        reason: `Ticket created by ${user.tag}`,
-      });
+      try {
+        ticketChannel = await guild.channels.create({
+          ...channelProps,
+          parent: TICKET_CATEGORY_ID,
+        });
+      } catch (err) {
+        parentError = err;
+        console.warn(`Ticket creation under category ${TICKET_CATEGORY_ID} failed:`, err.message);
+      }
+    }
+
+    // Fallback: create without a category if the parent category failed or wasn't set
+    if (!ticketChannel) {
+      try {
+        ticketChannel = await guild.channels.create(channelProps);
+      } catch (err) {
+        console.error('Ticket creation error (no parent):', err.message, err.stack);
+        if (parentError) {
+          console.error('Original category error:', parentError.message, parentError.stack);
+        }
+        return safeReply(interaction, {
+          content: `Failed to create ticket channel. Discord error: \`${err.message || err}\``,
+        });
+      }
     }
 
     const fields = [
@@ -716,20 +741,13 @@ async function handleModal(interaction) {
       .addFields(fields)
       .setTimestamp();
 
-    if (ticketChannel) {
-      const mentionParts = [user.toString()];
-      if (STAFF_ROLE_ID) mentionParts.push(`<@&${STAFF_ROLE_ID}>`);
-      await ticketChannel.send({ content: mentionParts.join(' '), embeds: [ticketEmbed] });
-      return safeReply(interaction, { content: `Ticket created: ${ticketChannel}` });
-    }
-
-    // No ticket category configured; record and reply
-    return safeReply(interaction, {
-      content: `Ticket recorded. No ticket category is configured, so a channel was not created.`,
-    });
+    const mentionParts = [user.toString()];
+    if (STAFF_ROLE_ID) mentionParts.push(`<@&${STAFF_ROLE_ID}>`);
+    await ticketChannel.send({ content: mentionParts.join(' '), embeds: [ticketEmbed] });
+    return safeReply(interaction, { content: `Ticket created: ${ticketChannel}` });
   } catch (err) {
-    console.error('Ticket creation error:', err);
-    return safeReply(interaction, { content: 'Failed to create ticket. Check my permissions and the ticket category ID.' });
+    console.error('Ticket creation error:', err.message, err.stack);
+    return safeReply(interaction, { content: `Failed to create ticket. \`${err.message || err}\`` });
   }
 }
 
