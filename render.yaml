@@ -20,3 +20,5 @@ services:
         sync: false
       - key: EXP_CHANNEL_ID
         sync: false
+      - key: TICKET_PANEL_CHANNEL_ID
+        sync: false
