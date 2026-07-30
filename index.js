@@ -19,6 +19,7 @@ const {
   PermissionFlagsBits,
   ChannelType,
   ComponentType,
+  OverwriteType,
 } = require('discord.js');
 
 // ---------------------------------------------------------------------------
@@ -676,12 +677,13 @@ async function handleModal(interaction) {
   try {
     const channelName = `${category}-${user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 100);
     const permissionOverwrites = [
-      { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-      { id: user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+      { id: guild.id, type: OverwriteType.Role, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: user.id, type: OverwriteType.Member, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
     ];
     if (STAFF_ROLE_ID) {
       permissionOverwrites.push({
         id: STAFF_ROLE_ID,
+        type: OverwriteType.Role,
         allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
       });
     }
