@@ -35,9 +35,10 @@ const ALLOWED_ROLE_IDS = rawAllowedRoles
 const TICKET_CATEGORY_ID = process.env.TICKET_CATEGORY_ID || '';
 const STAFF_ROLE_ID = process.env.STAFF_ROLE_ID || '';
 const EXP_CHANNEL_ID = process.env.EXP_CHANNEL_ID || '';
+const TICKET_PANEL_CHANNEL_ID = process.env.TICKET_PANEL_CHANNEL_ID || '1532222077480730744';
 
 const DATA_FILE = path.join(__dirname, 'data.json');
-let db = { points: {}, claims: {}, drops: {} };
+let db = { points: {}, claims: {}, drops: {}, ticketPanel: {} };
 
 function loadData() {
   try {
@@ -45,8 +46,9 @@ function loadData() {
     db.drops = db.drops || {};
     db.points = db.points || {};
     db.claims = db.claims || {};
+    db.ticketPanel = db.ticketPanel || {};
   } catch {
-    db = { points: {}, claims: {}, drops: {} };
+    db = { points: {}, claims: {}, drops: {}, ticketPanel: {} };
   }
 }
 
@@ -135,6 +137,78 @@ function formatDuration(ms) {
   if (min) parts.push(`${min}m`);
   if (s && !parts.length) parts.push(`${s}s`);
   return parts.join(' ') || '0s';
+}
+
+function buildTicketPanel() {
+  const embed = new EmbedBuilder()
+    .setTitle('AeroPulse Studios tickets')
+    .setDescription(
+      'Pick a category, then describe your request in the form.\n\n' +
+        '• **Report** — player / behavior report\n' +
+        '• **Support** — general help\n' +
+        '• **Content creator** — partnership / creators',
+    )
+    .setColor(0x5865f2);
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket_report')
+      .setLabel('Report')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId('ticket_support')
+      .setLabel('Support')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('ticket_creator')
+      .setLabel('Content creator')
+      .setStyle(ButtonStyle.Success),
+  );
+  return { embeds: [embed], components: [row] };
+}
+
+async function ensureTicketPanel() {
+  if (!TICKET_PANEL_CHANNEL_ID) return;
+  try {
+    const channel = await client.channels.fetch(TICKET_PANEL_CHANNEL_ID);
+    if (!channel || channel.type !== ChannelType.GuildText) {
+      console.warn('Ticket panel channel not found or not a text channel.');
+      return;
+    }
+
+    const { messageId } = db.ticketPanel || {};
+    if (messageId) {
+      try {
+        const existing = await channel.messages.fetch(messageId);
+        if (existing) {
+          console.log(`Ticket panel already exists: ${messageId}`);
+          return;
+        }
+      } catch {
+        // message deleted or inaccessible; continue
+      }
+    }
+
+    const messages = await channel.messages.fetch({ limit: 100 });
+    const existing = messages.find(
+      (m) =>
+        m.author.id === client.user.id &&
+        m.embeds[0]?.title === 'AeroPulse Studios tickets',
+    );
+    if (existing) {
+      db.ticketPanel = { channelId: channel.id, messageId: existing.id };
+      saveData();
+      console.log(`Found existing ticket panel: ${existing.id}`);
+      return;
+    }
+
+    const panel = buildTicketPanel();
+    const sent = await channel.send(panel);
+    db.ticketPanel = { channelId: channel.id, messageId: sent.id };
+    saveData();
+    console.log(`Sent ticket panel: ${sent.id}`);
+  } catch (err) {
+    console.error('Failed to ensure ticket panel:', err.message);
+  }
 }
 
 function safeDefer(interaction, ephemeral = true) {
@@ -288,6 +362,7 @@ client.once('ready', async () => {
     console.error('Failed to register slash commands:', err.message);
   }
   scheduleNextExpDrop();
+  ensureTicketPanel();
 });
 
 // ---------------------------------------------------------------------------
@@ -343,30 +418,7 @@ async function handleSlashCommand(interaction) {
       if (!member.permissionsIn(interaction.channel).has(PermissionFlagsBits.SendMessages)) {
         return safeReply(interaction, { content: 'I do not have permission to send messages here.' });
       }
-      const embed = new EmbedBuilder()
-        .setTitle('AeroPulse Studios tickets')
-        .setDescription(
-          'Pick a category, then describe your request in the form.\n\n' +
-            '• **Report** — player / behavior report\n' +
-            '• **Support** — general help\n' +
-            '• **Content creator** — partnership / creators',
-        )
-        .setColor(0x5865f2);
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('ticket_report')
-          .setLabel('Report')
-          .setStyle(ButtonStyle.Danger),
-        new ButtonBuilder()
-          .setCustomId('ticket_support')
-          .setLabel('Support')
-          .setStyle(ButtonStyle.Primary),
-        new ButtonBuilder()
-          .setCustomId('ticket_creator')
-          .setLabel('Content creator')
-          .setStyle(ButtonStyle.Success),
-      );
-      await interaction.channel.send({ embeds: [embed], components: [row] });
+      await interaction.channel.send(buildTicketPanel());
       return safeReply(interaction, { content: 'Ticket panel posted.' });
     }
 
