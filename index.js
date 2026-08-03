@@ -20,6 +20,7 @@ const {
   ChannelType,
   ComponentType,
   OverwriteType,
+  AttachmentBuilder,
 } = require('discord.js');
 
 // ---------------------------------------------------------------------------
@@ -34,15 +35,22 @@ const ALLOWED_ROLE_IDS = rawAllowedRoles
   .map((s) => s.trim())
   .filter(Boolean);
 const TICKET_CATEGORY_ID = process.env.TICKET_CATEGORY_ID || '';
-const STAFF_ROLE_IDS = (process.env.STAFF_ROLE_ID || '')
+const STAFF_ROLE_IDS = (process.env.STAFF_ROLE_ID || process.env.ALLOWED_ROLE_IDS || DEFAULT_ROLE_IDS)
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
+const TICKET_PING_ROLE_ID = process.env.TICKET_PING_ROLE_ID || '1531861205470416936';
+const TICKET_CLAIM_ROLE_IDS = (process.env.TICKET_CLAIM_ROLE_IDS || '1531860536193450174,1531861205470416936')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+const ESCALATION_ROLE_ID = process.env.ESCALATION_ROLE_ID || '1531860536193450174';
+const TICKET_LOG_CHANNEL_ID = process.env.TICKET_LOG_CHANNEL_ID || '';
 const EXP_CHANNEL_ID = process.env.EXP_CHANNEL_ID || '';
 const TICKET_PANEL_CHANNEL_ID = process.env.TICKET_PANEL_CHANNEL_ID || '1532222077480730744';
 
 const DATA_FILE = path.join(__dirname, 'data.json');
-let db = { points: {}, claims: {}, drops: {}, ticketPanel: {} };
+let db = { points: {}, claims: {}, drops: {}, ticketPanel: {}, tickets: {}, expRewards: {} };
 
 function loadData() {
   try {
@@ -51,8 +59,10 @@ function loadData() {
     db.points = db.points || {};
     db.claims = db.claims || {};
     db.ticketPanel = db.ticketPanel || {};
+    db.tickets = db.tickets || {};
+    db.expRewards = db.expRewards || {};
   } catch {
-    db = { points: {}, claims: {}, drops: {}, ticketPanel: {} };
+    db = { points: {}, claims: {}, drops: {}, ticketPanel: {}, tickets: {}, expRewards: {} };
   }
 }
 
@@ -73,6 +83,23 @@ function hasAllowedRole(member) {
   if (!member || !member.roles) return false;
   if (member.id === member.guild.ownerId) return true;
   return ALLOWED_ROLE_IDS.some((id) => member.roles.cache.has(id));
+}
+
+function isAdmin(member) {
+  if (!member) return false;
+  if (member.id === member.guild.ownerId) return true;
+  return hasAllowedRole(member);
+}
+
+function canClaimTicket(member) {
+  if (isAdmin(member)) return true;
+  return TICKET_CLAIM_ROLE_IDS.some((id) => member.roles.cache.has(id));
+}
+
+function canCloseTicket(member, ticket) {
+  if (isAdmin(member)) return true;
+  if (ticket && (ticket.claimedBy === member.id || ticket.openerId === member.id)) return true;
+  return false;
 }
 
 function buildTicketPanel() {
@@ -248,6 +275,15 @@ const commands = [
   new SlashCommandBuilder()
     .setName('ticket')
     .setDescription('Post the support ticket panel.'),
+  new SlashCommandBuilder()
+    .setName('checkexp')
+    .setDescription("Check a user's EXP total (staff only).")
+    .addUserOption((opt) =>
+      opt
+        .setName('user')
+        .setDescription('User to check.')
+        .setRequired(true),
+    ),
 ].map((cmd) => cmd.toJSON());
 
 // ---------------------------------------------------------------------------
@@ -329,13 +365,20 @@ async function handleSlashCommand(interaction) {
       return safeReply(interaction, { content: 'Unknown command.' });
   }
 
-  // Staff-only commands (dm, avatar)
+  // Staff-only commands (dm, avatar, checkexp)
   if (!hasAllowedRole(member)) {
     return safeReply(interaction, { content: 'You do not have permission to use this command.' });
   }
 
   try {
     switch (commandName) {
+      case 'checkexp': {
+        const targetUser = interaction.options.getUser('user', true);
+        const guildPoints = db.points[interaction.guildId] || {};
+        const points = guildPoints[targetUser.id] || 0;
+        return safeReply(interaction, { content: `${targetUser} has **${points}** EXP.` });
+      }
+
       case 'dm': {
         const targetUser = interaction.options.getUser('user', true);
         const message = interaction.options.getString('message', true);
@@ -391,18 +434,193 @@ async function handleSlashCommand(interaction) {
 // ---------------------------------------------------------------------------
 // Buttons: ticket + EXP claim
 // ---------------------------------------------------------------------------
+const TICKET_OPEN_IDS = ['ticket_report', 'ticket_support', 'ticket_creator'];
+
 async function handleButton(interaction) {
   try {
-    if (interaction.customId.startsWith('ticket_')) {
+    if (interaction.customId === 'exp_claim') {
+      return handleExpClaim(interaction);
+    }
+
+    if (TICKET_OPEN_IDS.includes(interaction.customId)) {
       const category = interaction.customId.replace('ticket_', '');
       return showTicketModal(interaction, category);
     }
 
-    if (interaction.customId === 'exp_claim') {
-      return handleExpClaim(interaction);
+    if (interaction.customId === 'ticket_claim') {
+      return handleTicketClaim(interaction);
+    }
+
+    if (interaction.customId === 'ticket_escalate') {
+      return handleTicketEscalate(interaction);
+    }
+
+    if (interaction.customId === 'ticket_close') {
+      return handleTicketClose(interaction);
     }
   } catch (err) {
     console.error('Button error:', err);
+  }
+}
+
+async function handleTicketClaim(interaction) {
+  const member = interaction.member;
+  if (!canClaimTicket(member)) {
+    return safeReply(interaction, { content: 'You do not have permission to claim this ticket.' });
+  }
+
+  const ticket = db.tickets[interaction.channelId];
+  if (ticket && ticket.claimedBy) {
+    return safeReply(interaction, { content: `This ticket is already claimed by <@${ticket.claimedBy}>.` });
+  }
+
+  await interaction.deferUpdate();
+
+  const message = interaction.message;
+  const embed = EmbedBuilder.from(message.embeds[0]);
+  embed.addFields({ name: 'Claimed by', value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket_claim')
+      .setLabel('Claimed')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(true),
+    new ButtonBuilder().setCustomId('ticket_escalate').setLabel('Escalate').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('ticket_close').setLabel('Close').setStyle(ButtonStyle.Secondary),
+  );
+
+  await message.edit({ embeds: [embed], components: [row] });
+
+  if (ticket) {
+    ticket.claimedBy = member.id;
+    saveData();
+  }
+
+  await interaction.followUp({ content: 'Ticket claimed.', ephemeral: true });
+}
+
+async function handleTicketEscalate(interaction) {
+  const member = interaction.member;
+  if (!canClaimTicket(member)) {
+    return safeReply(interaction, { content: 'You do not have permission to escalate this ticket.' });
+  }
+
+  await interaction.reply({ content: 'Ticket escalated.', ephemeral: true });
+  await interaction.channel.send({
+    content: `<@&${ESCALATION_ROLE_ID}> Ticket escalated by ${interaction.user}.`,
+  });
+}
+
+async function buildChannelTranscript(channel) {
+  const messages = await channel.messages.fetch({ limit: 100 });
+  const sorted = Array.from(messages.values()).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+  const lines = [];
+  for (const msg of sorted) {
+    const timestamp = new Date(msg.createdTimestamp).toISOString();
+    const author = msg.author ? `${msg.author.tag} (${msg.author.id})` : 'Unknown';
+    let content = msg.content || '';
+    if (msg.attachments.size > 0) {
+      const attachmentUrls = Array.from(msg.attachments.values()).map((a) => a.url).join(' ');
+      content += (content ? ' ' : '') + `[Attachments: ${attachmentUrls}]`;
+    }
+    if (!content) content = '*No text content*';
+    lines.push(`[${timestamp}] ${author}: ${content}`);
+  }
+  return lines.join('\n');
+}
+
+async function getTicketInfo(channel) {
+  const fromDb = db.tickets[channel.id];
+  if (fromDb) return fromDb;
+
+  const messages = await channel.messages.fetch({ limit: 50 });
+  const ticketMessage = messages.find((m) => m.author.id === client.user.id && m.embeds[0]?.title?.startsWith('New ticket'));
+  if (!ticketMessage) return null;
+
+  const embed = ticketMessage.embeds[0];
+  const openerField = embed.fields.find((f) => f.name === 'Submitted by');
+  const claimedField = embed.fields.find((f) => f.name === 'Claimed by');
+  const categoryField = embed.fields.find((f) => f.name === 'Category');
+  const openerMatch = openerField?.value?.match(/<@!?(\d+)>/);
+  const claimedMatch = claimedField?.value?.match(/<@!?(\d+)>/);
+
+  return {
+    openerId: openerMatch ? openerMatch[1] : null,
+    claimedBy: claimedMatch ? claimedMatch[1] : null,
+    category: categoryField?.value || 'unknown',
+    messageId: ticketMessage.id,
+  };
+}
+
+async function handleTicketClose(interaction) {
+  const channel = interaction.channel;
+  const member = interaction.member;
+  const ticket = db.tickets[channel.id] || (await getTicketInfo(channel));
+
+  if (!canCloseTicket(member, ticket)) {
+    return safeReply(interaction, { content: 'You do not have permission to close this ticket.' });
+  }
+
+  await interaction.deferUpdate();
+
+  let transcript = '';
+  try {
+    transcript = await buildChannelTranscript(channel);
+  } catch (err) {
+    console.error('Failed to build transcript:', err.message);
+  }
+
+  const openerId = ticket?.openerId;
+  const claimedBy = ticket?.claimedBy || 'Unclaimed';
+  const fileName = `transcript-${channel.name}.txt`;
+  const fileBuffer = Buffer.from(transcript, 'utf-8');
+
+  if (openerId) {
+    try {
+      const opener = await interaction.guild.members.fetch(openerId);
+      const dmAttachment = new AttachmentBuilder(fileBuffer, { name: fileName });
+      await opener.send({
+        content: `Your ticket in **${interaction.guild.name}** has been closed. A transcript is attached.`,
+        files: [dmAttachment],
+      });
+    } catch (err) {
+      console.error('Failed to DM ticket transcript:', err.message);
+    }
+  }
+
+  if (TICKET_LOG_CHANNEL_ID) {
+    try {
+      const logChannel = await client.channels.fetch(TICKET_LOG_CHANNEL_ID);
+      if (logChannel && logChannel.type === ChannelType.GuildText) {
+        const logAttachment = new AttachmentBuilder(Buffer.from(transcript, 'utf-8'), { name: fileName });
+        const logEmbed = new EmbedBuilder()
+          .setTitle('Ticket Closed')
+          .setColor(0xed4245)
+          .addFields(
+            { name: 'Channel', value: channel.name, inline: true },
+            { name: 'Opened by', value: openerId ? `<@${openerId}> (\`${openerId}\`)` : 'Unknown', inline: true },
+            { name: 'Claimed by', value: claimedBy !== 'Unclaimed' ? `<@${claimedBy}>` : 'Unclaimed', inline: true },
+            { name: 'Closed by', value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
+          )
+          .setTimestamp();
+        await logChannel.send({ embeds: [logEmbed], files: [logAttachment] });
+      }
+    } catch (err) {
+      console.error('Failed to send ticket log:', err.message);
+    }
+  }
+
+  if (ticket && db.tickets[channel.id]) {
+    delete db.tickets[channel.id];
+    saveData();
+  }
+
+  try {
+    await channel.delete(`Ticket closed by ${interaction.user.tag}`);
+  } catch (err) {
+    console.error('Failed to delete ticket channel:', err.message);
+    await interaction.followUp({ content: 'Transcript saved, but I could not delete the channel.', ephemeral: true });
   }
 }
 
@@ -544,11 +762,41 @@ async function handleModal(interaction) {
       .addFields(fields)
       .setTimestamp();
 
+    const actionRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('ticket_claim')
+        .setLabel('Claim')
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('ticket_escalate')
+        .setLabel('Escalate')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('ticket_close')
+        .setLabel('Close')
+        .setStyle(ButtonStyle.Secondary),
+    );
+
     const mentionParts = [user.toString()];
-    for (const roleId of STAFF_ROLE_IDS) {
-      mentionParts.push(`<@&${roleId}>`);
-    }
-    await ticketChannel.send({ content: mentionParts.join(' '), embeds: [ticketEmbed] });
+    if (TICKET_PING_ROLE_ID) mentionParts.push(`<@&${TICKET_PING_ROLE_ID}>`);
+    const ticketMessage = await ticketChannel.send({
+      content: mentionParts.join(' '),
+      embeds: [ticketEmbed],
+      components: [actionRow],
+    });
+
+    db.tickets[ticketChannel.id] = {
+      openerId: user.id,
+      claimedBy: null,
+      category,
+      username,
+      reason,
+      extra,
+      createdAt: Date.now(),
+      messageId: ticketMessage.id,
+    };
+    saveData();
+
     return safeReply(interaction, { content: `Ticket created: ${ticketChannel}` });
   } catch (err) {
     console.error('Ticket creation error:', err.message, err.stack);
@@ -647,6 +895,36 @@ async function handleExpClaim(interaction) {
 
   await interaction.update({ embeds: [claimedEmbed], components: [disabledRow] });
   await interaction.followUp({ content: `You claimed **${points}** EXP!`, ephemeral: true });
+
+  await notifyExpRewards(interaction.user, db.points[guildId][userId]);
+}
+
+async function notifyExpRewards(user, total) {
+  try {
+    const guildId = ALLOWED_GUILD_ID;
+    db.expRewards[guildId] = db.expRewards[guildId] || {};
+    const rewards = db.expRewards[guildId][user.id] || [];
+
+    const thresholds = [
+      { amount: 1000, robux: 100 },
+      { amount: 5000, robux: 250 },
+    ];
+
+    for (const { amount, robux } of thresholds) {
+      if (total >= amount && !rewards.includes(String(amount))) {
+        rewards.push(String(amount));
+        await user.send(
+          `Congragulations ${user.username}, you have reached ${amount.toLocaleString()} EXP! ` +
+            `You can now cash out for ${robux} robux. If you wish to cash out your prize, please create a ticket inside of <#${TICKET_PANEL_CHANNEL_ID}>`,
+        );
+      }
+    }
+
+    db.expRewards[guildId][user.id] = rewards;
+    saveData();
+  } catch (err) {
+    console.error('EXP reward notification error:', err.message);
+  }
 }
 
 // ---------------------------------------------------------------------------

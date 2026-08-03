@@ -30,6 +30,7 @@ Replace `YOUR_APP_ID` with your bot’s Application ID from the Discord Develope
 
 - `/dm <user> <message>` — DM a user with an embed (staff roles only).
 - `/avatar <roblox-username>` — Show Roblox account info and avatar (staff roles only).
+- `/checkexp <user>` — Check a user's EXP total (staff roles only).
 - `/rank` — Show your server EXP rank (open to all members).
 - `/ping` — Show bot latency (open to all members).
 - `/ticket` — Post the support ticket panel (open to all members).
@@ -42,8 +43,12 @@ Required:
 Optional (the guild and role defaults are already set to the AeroPulse server/roles):
 - `ALLOWED_GUILD_ID` (or `GUILD_ID`) — Server the bot operates in.
 - `ALLOWED_ROLE_IDS` — Comma-separated staff role IDs for restricted commands. Falls back to `STAFF_ROLE_ID` if not set.
+- `STAFF_ROLE_ID` — Comma-separated staff role IDs who can view ticket channels.
+- `TICKET_PING_ROLE_ID` — Role pinged in every new ticket (default: `1531861205470416936`).
+- `TICKET_CLAIM_ROLE_IDS` — Roles who can claim a ticket (default: `1531860536193450174,1531861205470416936`).
+- `ESCALATION_ROLE_ID` — Role pinged when a ticket is escalated (default: `1531860536193450174`).
+- `TICKET_LOG_CHANNEL_ID` — Channel where ticket close logs and transcripts are sent.
 - `TICKET_CATEGORY_ID` — Category for new ticket channels.
-- `STAFF_ROLE_ID` — Comma-separated staff role IDs mentioned on new tickets.
 - `EXP_CHANNEL_ID` — Channel for hourly EXP drops.
 - `TICKET_PANEL_CHANNEL_ID` — Channel where the ticket panel is auto-posted on startup (defaults to `1532222077480730744`).
 
