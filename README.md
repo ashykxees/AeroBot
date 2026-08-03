@@ -48,7 +48,7 @@ Optional (the guild and role defaults are already set to the AeroPulse server/ro
 - `TICKET_PING_ROLE_ID` — Role pinged in every new ticket (default: `1531861205470416936`).
 - `TICKET_CLAIM_ROLE_IDS` — Roles who can claim a ticket (default: `1531860536193450174,1531861205470416936`).
 - `ESCALATION_ROLE_ID` — Role pinged when a ticket is escalated (default: `1531860536193450174`).
-- `TICKET_LOG_CHANNEL_ID` — Channel where ticket close logs and transcripts are sent.
+- `TICKET_LOG_CHANNEL_ID` — Channel where ticket close logs and transcripts are sent (default: `1533707432327381162`).
 - `TICKET_CATEGORY_ID` — Category for new ticket channels.
 - `EXP_CHANNEL_ID` — Channel for hourly EXP drops.
 - `TICKET_PANEL_CHANNEL_ID` — Channel where the ticket panel is auto-posted on startup (defaults to `1532222077480730744`).
