@@ -16,6 +16,14 @@ services:
         sync: false
       - key: STAFF_ROLE_ID
         sync: false
+      - key: TICKET_PING_ROLE_ID
+        sync: false
+      - key: TICKET_CLAIM_ROLE_IDS
+        sync: false
+      - key: ESCALATION_ROLE_ID
+        sync: false
+      - key: TICKET_LOG_CHANNEL_ID
+        sync: false
       - key: TICKET_CATEGORY_ID
         sync: false
       - key: EXP_CHANNEL_ID
