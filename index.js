@@ -284,6 +284,22 @@ const commands = [
         .setDescription('User to check.')
         .setRequired(true),
     ),
+  new SlashCommandBuilder()
+    .setName('addexp')
+    .setDescription('Add EXP to a user (staff only).')
+    .addUserOption((opt) =>
+      opt
+        .setName('user')
+        .setDescription('User to add EXP to.')
+        .setRequired(true),
+    )
+    .addIntegerOption((opt) =>
+      opt
+        .setName('amount')
+        .setDescription('Amount of EXP to add.')
+        .setRequired(true)
+        .setMinValue(1),
+    ),
 ].map((cmd) => cmd.toJSON());
 
 // ---------------------------------------------------------------------------
@@ -360,12 +376,9 @@ async function handleSlashCommand(interaction) {
       await interaction.channel.send(buildTicketPanel());
       return safeReply(interaction, { content: 'Ticket panel posted.' });
     }
-
-    default:
-      return safeReply(interaction, { content: 'Unknown command.' });
   }
 
-  // Staff-only commands (dm, avatar, checkexp)
+  // Staff-only commands (dm, avatar, checkexp, addexp)
   if (!hasAllowedRole(member)) {
     return safeReply(interaction, { content: 'You do not have permission to use this command.' });
   }
@@ -377,6 +390,19 @@ async function handleSlashCommand(interaction) {
         const guildPoints = db.points[interaction.guildId] || {};
         const points = guildPoints[targetUser.id] || 0;
         return safeReply(interaction, { content: `${targetUser} has **${points}** EXP.` });
+      }
+
+      case 'addexp': {
+        const targetUser = interaction.options.getUser('user', true);
+        const amount = interaction.options.getInteger('amount', true);
+        const guildPoints = db.points[interaction.guildId] || {};
+        const current = guildPoints[targetUser.id] || 0;
+        const newTotal = current + amount;
+        guildPoints[targetUser.id] = newTotal;
+        db.points[interaction.guildId] = guildPoints;
+        saveData();
+        await notifyExpRewards(targetUser, newTotal);
+        return safeReply(interaction, { content: `Added **${amount}** EXP to ${targetUser}. New total: **${newTotal}** EXP.` });
       }
 
       case 'dm': {
