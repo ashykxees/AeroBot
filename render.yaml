@@ -8,6 +8,8 @@ services:
     envVars:
       - key: DISCORD_TOKEN
         sync: false
+      - key: DATABASE_URL
+        sync: false
       - key: ALLOWED_GUILD_ID
         sync: false
       - key: GUILD_ID
