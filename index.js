@@ -804,11 +804,16 @@ async function handleModal(interaction) {
     );
 
     const mentionParts = [user.toString()];
-    if (TICKET_PING_ROLE_ID) mentionParts.push(`<@&${TICKET_PING_ROLE_ID}>`);
+    const allowedRoles = [];
+    if (TICKET_PING_ROLE_ID) {
+      mentionParts.push(`<@&${TICKET_PING_ROLE_ID}>`);
+      allowedRoles.push(TICKET_PING_ROLE_ID);
+    }
     const ticketMessage = await ticketChannel.send({
       content: mentionParts.join(' '),
       embeds: [ticketEmbed],
       components: [actionRow],
+      allowedMentions: { parse: ['users'], roles: allowedRoles },
     });
 
     db.tickets[ticketChannel.id] = {
