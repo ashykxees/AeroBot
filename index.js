@@ -565,7 +565,11 @@ async function handleTicketClaim(interaction) {
       .setLabel('Claimed')
       .setStyle(ButtonStyle.Primary)
       .setDisabled(true),
-    new ButtonBuilder().setCustomId('ticket_escalate').setLabel('Escalate').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId('ticket_escalate')
+      .setLabel('Escalate')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(!!(ticket && ticket.escalatedBy)),
     new ButtonBuilder().setCustomId('ticket_close').setLabel('Close').setStyle(ButtonStyle.Secondary),
   );
 
@@ -585,10 +589,43 @@ async function handleTicketEscalate(interaction) {
     return safeReply(interaction, { content: 'You do not have permission to escalate this ticket.' });
   }
 
-  await interaction.reply({ content: 'Ticket escalated.', ephemeral: true });
+  const ticket = db.tickets[interaction.channelId] || (await getTicketInfo(interaction.channel));
+  if (ticket && ticket.escalatedBy) {
+    return safeReply(interaction, { content: `This ticket has already been escalated by <@${ticket.escalatedBy}>.` });
+  }
+
+  await interaction.deferUpdate();
+
+  const message = interaction.message;
+  const embed = EmbedBuilder.from(message.embeds[0]);
+  embed.addFields({ name: 'Escalated by', value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket_claim')
+      .setLabel(ticket && ticket.claimedBy ? 'Claimed' : 'Claim')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(!!(ticket && ticket.claimedBy)),
+    new ButtonBuilder()
+      .setCustomId('ticket_escalate')
+      .setLabel('Escalated')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(true),
+    new ButtonBuilder().setCustomId('ticket_close').setLabel('Close').setStyle(ButtonStyle.Secondary),
+  );
+
+  await message.edit({ embeds: [embed], components: [row] });
+
   await interaction.channel.send({
     content: `<@&${ESCALATION_ROLE_ID}> Ticket escalated by ${interaction.user}.`,
   });
+
+  if (ticket) {
+    ticket.escalatedBy = member.id;
+    await saveData();
+  }
+
+  await interaction.followUp({ content: 'Ticket escalated.', ephemeral: true });
 }
 
 async function buildChannelTranscript(channel) {
@@ -620,13 +657,16 @@ async function getTicketInfo(channel) {
   const embed = ticketMessage.embeds[0];
   const openerField = embed.fields.find((f) => f.name === 'Submitted by');
   const claimedField = embed.fields.find((f) => f.name === 'Claimed by');
+  const escalatedField = embed.fields.find((f) => f.name === 'Escalated by');
   const categoryField = embed.fields.find((f) => f.name === 'Category');
   const openerMatch = openerField?.value?.match(/<@!?(\d+)>/);
   const claimedMatch = claimedField?.value?.match(/<@!?(\d+)>/);
+  const escalatedMatch = escalatedField?.value?.match(/<@!?(\d+)>/);
 
   return {
     openerId: openerMatch ? openerMatch[1] : null,
     claimedBy: claimedMatch ? claimedMatch[1] : null,
+    escalatedBy: escalatedMatch ? escalatedMatch[1] : null,
     category: categoryField?.value || 'unknown',
     messageId: ticketMessage.id,
   };
@@ -872,6 +912,7 @@ async function handleModal(interaction) {
     db.tickets[ticketChannel.id] = {
       openerId: user.id,
       claimedBy: null,
+      escalatedBy: null,
       category,
       username,
       reason,
