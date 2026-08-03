@@ -41,6 +41,9 @@ Replace `YOUR_APP_ID` with your bot’s Application ID from the Discord Develope
 Required:
 - `DISCORD_TOKEN` — Bot token.
 
+Optional persistence:
+- `DATABASE_URL` — PostgreSQL connection URL. If set, EXP/ticket data is stored in Postgres and survives redeploys. Falls back to `data.json` locally if not set.
+
 Optional (the guild and role defaults are already set to the AeroPulse server/roles):
 - `ALLOWED_GUILD_ID` (or `GUILD_ID`) — Server the bot operates in.
 - `ALLOWED_ROLE_IDS` — Comma-separated staff role IDs for restricted commands. Falls back to `STAFF_ROLE_ID` if not set.

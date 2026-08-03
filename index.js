@@ -2,6 +2,21 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+
+let pgClient = null;
+const DATABASE_URL = process.env.DATABASE_URL || '';
+if (DATABASE_URL) {
+  try {
+    const { Pool } = require('pg');
+    pgClient = new Pool({
+      connectionString: DATABASE_URL,
+      ssl: DATABASE_URL.includes('sslmode=require') ? { rejectUnauthorized: false } : undefined,
+    });
+  } catch (err) {
+    console.warn('Failed to initialize PostgreSQL:', err.message);
+  }
+}
+
 const {
   Client,
   GatewayIntentBits,
@@ -50,10 +65,37 @@ const EXP_CHANNEL_ID = process.env.EXP_CHANNEL_ID || '';
 const TICKET_PANEL_CHANNEL_ID = process.env.TICKET_PANEL_CHANNEL_ID || '1532222077480730744';
 
 const DATA_FILE = path.join(__dirname, 'data.json');
+const STATE_KEY = 'aerobot_state';
 let db = { points: {}, claims: {}, drops: {}, ticketPanel: {}, tickets: {}, expRewards: {} };
 
-function loadData() {
+async function ensureDbTable() {
+  if (!pgClient) return;
+  await pgClient.query(
+    'CREATE TABLE IF NOT EXISTS bot_state (key TEXT PRIMARY KEY, value JSONB NOT NULL)',
+  );
+}
+
+async function loadData() {
   try {
+    if (pgClient) {
+      await ensureDbTable();
+      const result = await pgClient.query('SELECT value FROM bot_state WHERE key = $1', [STATE_KEY]);
+      if (result.rows.length > 0) {
+        const saved = result.rows[0].value;
+        db = {
+          points: saved.points || {},
+          claims: saved.claims || {},
+          drops: saved.drops || {},
+          ticketPanel: saved.ticketPanel || {},
+          tickets: saved.tickets || {},
+          expRewards: saved.expRewards || {},
+        };
+      } else {
+        db = { points: {}, claims: {}, drops: {}, ticketPanel: {}, tickets: {}, expRewards: {} };
+      }
+      return;
+    }
+
     db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     db.drops = db.drops || {};
     db.points = db.points || {};
@@ -66,11 +108,22 @@ function loadData() {
   }
 }
 
-function saveData() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
-}
+async function saveData() {
+  try {
+    if (pgClient) {
+      await ensureDbTable();
+      await pgClient.query(
+        'INSERT INTO bot_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2',
+        [STATE_KEY, JSON.stringify(db)],
+      );
+      return;
+    }
 
-loadData();
+    fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+  } catch (err) {
+    console.error('Failed to save data:', err.message);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -159,7 +212,7 @@ async function ensureTicketPanel() {
     );
     if (existing) {
       db.ticketPanel = { channelId: channel.id, messageId: existing.id };
-      saveData();
+      await saveData();
       console.log(`Found existing ticket panel: ${existing.id}`);
       return;
     }
@@ -167,7 +220,7 @@ async function ensureTicketPanel() {
     const panel = buildTicketPanel();
     const sent = await channel.send(panel);
     db.ticketPanel = { channelId: channel.id, messageId: sent.id };
-    saveData();
+    await saveData();
     console.log(`Sent ticket panel: ${sent.id}`);
   } catch (err) {
     console.error('Failed to ensure ticket panel:', err.message);
@@ -317,7 +370,7 @@ client.once('ready', async () => {
     console.error('Failed to register slash commands:', err.message);
   }
   scheduleNextExpDrop();
-  ensureTicketPanel();
+  await ensureTicketPanel();
 });
 
 // ---------------------------------------------------------------------------
@@ -400,7 +453,7 @@ async function handleSlashCommand(interaction) {
         const newTotal = current + amount;
         guildPoints[targetUser.id] = newTotal;
         db.points[interaction.guildId] = guildPoints;
-        saveData();
+        await saveData();
         await notifyExpRewards(targetUser, newTotal);
         return safeReply(interaction, { content: `Added **${amount}** EXP to ${targetUser}. New total: **${newTotal}** EXP.` });
       }
@@ -520,7 +573,7 @@ async function handleTicketClaim(interaction) {
 
   if (ticket) {
     ticket.claimedBy = member.id;
-    saveData();
+    await saveData();
   }
 
   await interaction.followUp({ content: 'Ticket claimed.', ephemeral: true });
@@ -639,7 +692,7 @@ async function handleTicketClose(interaction) {
 
   if (ticket && db.tickets[channel.id]) {
     delete db.tickets[channel.id];
-    saveData();
+    await saveData();
   }
 
   try {
@@ -826,7 +879,7 @@ async function handleModal(interaction) {
       createdAt: Date.now(),
       messageId: ticketMessage.id,
     };
-    saveData();
+    await saveData();
 
     return safeReply(interaction, { content: `Ticket created: ${ticketChannel}` });
   } catch (err) {
@@ -875,7 +928,7 @@ async function sendExpDrop() {
 
     const message = await channel.send({ embeds: [embed], components: [row] });
     db.drops[message.id] = { points, sentAt: Date.now() };
-    saveData();
+    await saveData();
     console.log(`Sent EXP drop message ${message.id} worth ${points} EXP`);
   } catch (err) {
     console.error('EXP drop error:', err);
@@ -907,7 +960,7 @@ async function handleExpClaim(interaction) {
     points,
     claimedAt: Date.now(),
   };
-  saveData();
+  await saveData();
 
   const claimedEmbed = new EmbedBuilder()
     .setTitle('EXP Drop Claimed!')
@@ -952,7 +1005,7 @@ async function notifyExpRewards(user, total) {
     }
 
     db.expRewards[guildId][user.id] = rewards;
-    saveData();
+    await saveData();
   } catch (err) {
     console.error('EXP reward notification error:', err.message);
   }
@@ -961,18 +1014,22 @@ async function notifyExpRewards(user, total) {
 // ---------------------------------------------------------------------------
 // Startup
 // ---------------------------------------------------------------------------
-if (!DISCORD_TOKEN) {
-  console.error('DISCORD_TOKEN is missing. Set it in your .env file or environment.');
-  process.exit(1);
-}
+(async () => {
+  if (!DISCORD_TOKEN) {
+    console.error('DISCORD_TOKEN is missing. Set it in your .env file or environment.');
+    process.exit(1);
+  }
 
-client.login(DISCORD_TOKEN);
+  await loadData();
 
-// Minimal health endpoint for Render / container hosts
-const port = process.env.PORT || 3000;
-http
-  .createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('AeroBot is running');
-  })
-  .listen(port, () => console.log(`Health server listening on port ${port}`));
+  client.login(DISCORD_TOKEN);
+
+  // Minimal health endpoint for Render / container hosts
+  const port = process.env.PORT || 3000;
+  http
+    .createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('AeroBot is running');
+    })
+    .listen(port, () => console.log(`Health server listening on port ${port}`));
+})();
