@@ -353,6 +353,38 @@ const commands = [
         .setRequired(true)
         .setMinValue(1),
     ),
+  new SlashCommandBuilder()
+    .setName('removeexp')
+    .setDescription('Remove EXP from a user (staff only).')
+    .addUserOption((opt) =>
+      opt
+        .setName('user')
+        .setDescription('User to remove EXP from.')
+        .setRequired(true),
+    )
+    .addIntegerOption((opt) =>
+      opt
+        .setName('amount')
+        .setDescription('Amount of EXP to remove.')
+        .setRequired(true)
+        .setMinValue(1),
+    ),
+  new SlashCommandBuilder()
+    .setName('editexp')
+    .setDescription('Set a user EXP total (staff only).')
+    .addUserOption((opt) =>
+      opt
+        .setName('user')
+        .setDescription('User to edit EXP for.')
+        .setRequired(true),
+    )
+    .addIntegerOption((opt) =>
+      opt
+        .setName('amount')
+        .setDescription('New EXP total.')
+        .setRequired(true)
+        .setMinValue(0),
+    ),
 ].map((cmd) => cmd.toJSON());
 
 // ---------------------------------------------------------------------------
@@ -431,7 +463,7 @@ async function handleSlashCommand(interaction) {
     }
   }
 
-  // Staff-only commands (dm, avatar, checkexp, addexp)
+  // Staff-only commands (dm, avatar, checkexp, addexp, removeexp, editexp)
   if (!hasAllowedRole(member)) {
     return safeReply(interaction, { content: 'You do not have permission to use this command.' });
   }
@@ -456,6 +488,32 @@ async function handleSlashCommand(interaction) {
         await saveData();
         await notifyExpRewards(targetUser, newTotal);
         return safeReply(interaction, { content: `Added **${amount}** EXP to ${targetUser}. New total: **${newTotal}** EXP.` });
+      }
+
+      case 'removeexp': {
+        const targetUser = interaction.options.getUser('user', true);
+        const amount = interaction.options.getInteger('amount', true);
+        const guildPoints = db.points[interaction.guildId] || {};
+        const current = guildPoints[targetUser.id] || 0;
+        const newTotal = Math.max(0, current - amount);
+        guildPoints[targetUser.id] = newTotal;
+        db.points[interaction.guildId] = guildPoints;
+        await saveData();
+        return safeReply(interaction, { content: `Removed **${amount}** EXP from ${targetUser}. New total: **${newTotal}** EXP.` });
+      }
+
+      case 'editexp': {
+        const targetUser = interaction.options.getUser('user', true);
+        const amount = interaction.options.getInteger('amount', true);
+        const guildPoints = db.points[interaction.guildId] || {};
+        const current = guildPoints[targetUser.id] || 0;
+        guildPoints[targetUser.id] = amount;
+        db.points[interaction.guildId] = guildPoints;
+        await saveData();
+        if (amount > current) {
+          await notifyExpRewards(targetUser, amount);
+        }
+        return safeReply(interaction, { content: `Set ${targetUser} EXP to **${amount}**.` });
       }
 
       case 'dm': {
