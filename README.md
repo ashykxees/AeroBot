@@ -32,6 +32,8 @@ Replace `YOUR_APP_ID` with your bot’s Application ID from the Discord Develope
 - `/avatar <roblox-username>` — Show Roblox account info and avatar (staff roles only).
 - `/checkexp <user>` — Check a user's EXP total (staff roles only).
 - `/addexp <user> <amount>` — Add EXP to a user (staff roles only).
+- `/removeexp <user> <amount>` — Remove EXP from a user (staff roles only).
+- `/editexp <user> <amount>` — Set a user's EXP total (staff roles only).
 - `/rank` — Show your server EXP rank (open to all members).
 - `/ping` — Show bot latency (open to all members).
 - `/ticket` — Post the support ticket panel (open to all members).
