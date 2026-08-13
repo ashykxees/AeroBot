@@ -33,7 +33,6 @@ const {
   TextInputStyle,
   PermissionFlagsBits,
   ChannelType,
-  ComponentType,
   OverwriteType,
   AttachmentBuilder,
 } = require('discord.js');
@@ -61,12 +60,11 @@ const TICKET_CLAIM_ROLE_IDS = (process.env.TICKET_CLAIM_ROLE_IDS || '15318605361
   .filter(Boolean);
 const ESCALATION_ROLE_ID = process.env.ESCALATION_ROLE_ID || '1531860536193450174';
 const TICKET_LOG_CHANNEL_ID = process.env.TICKET_LOG_CHANNEL_ID || '1533707432327381162';
-const EXP_CHANNEL_ID = process.env.EXP_CHANNEL_ID || '';
 const TICKET_PANEL_CHANNEL_ID = process.env.TICKET_PANEL_CHANNEL_ID || '1532222077480730744';
 
 const DATA_FILE = path.join(__dirname, 'data.json');
 const STATE_KEY = 'aerobot_state';
-let db = { points: {}, claims: {}, drops: {}, ticketPanel: {}, tickets: {}, expRewards: {} };
+let db = { ticketPanel: {}, tickets: {} };
 
 async function ensureDbTable() {
   if (!pgClient) return;
@@ -83,28 +81,20 @@ async function loadData() {
       if (result.rows.length > 0) {
         const saved = result.rows[0].value;
         db = {
-          points: saved.points || {},
-          claims: saved.claims || {},
-          drops: saved.drops || {},
           ticketPanel: saved.ticketPanel || {},
           tickets: saved.tickets || {},
-          expRewards: saved.expRewards || {},
         };
       } else {
-        db = { points: {}, claims: {}, drops: {}, ticketPanel: {}, tickets: {}, expRewards: {} };
+        db = { ticketPanel: {}, tickets: {} };
       }
       return;
     }
 
     db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    db.drops = db.drops || {};
-    db.points = db.points || {};
-    db.claims = db.claims || {};
     db.ticketPanel = db.ticketPanel || {};
     db.tickets = db.tickets || {};
-    db.expRewards = db.expRewards || {};
   } catch {
-    db = { points: {}, claims: {}, drops: {}, ticketPanel: {}, tickets: {}, expRewards: {} };
+    db = { ticketPanel: {}, tickets: {} };
   }
 }
 
@@ -320,71 +310,14 @@ const commands = [
         .setRequired(true),
     ),
   new SlashCommandBuilder()
-    .setName('rank')
-    .setDescription('View your server EXP rank.'),
+    .setName('close')
+    .setDescription('Close the current ticket channel (staff, claimer, or opener).'),
   new SlashCommandBuilder()
     .setName('ping')
     .setDescription('View the bot latency.'),
   new SlashCommandBuilder()
     .setName('ticket')
     .setDescription('Post the support ticket panel.'),
-  new SlashCommandBuilder()
-    .setName('checkexp')
-    .setDescription("Check a user's EXP total (staff only).")
-    .addUserOption((opt) =>
-      opt
-        .setName('user')
-        .setDescription('User to check.')
-        .setRequired(true),
-    ),
-  new SlashCommandBuilder()
-    .setName('addexp')
-    .setDescription('Add EXP to a user (staff only).')
-    .addUserOption((opt) =>
-      opt
-        .setName('user')
-        .setDescription('User to add EXP to.')
-        .setRequired(true),
-    )
-    .addIntegerOption((opt) =>
-      opt
-        .setName('amount')
-        .setDescription('Amount of EXP to add.')
-        .setRequired(true)
-        .setMinValue(1),
-    ),
-  new SlashCommandBuilder()
-    .setName('removeexp')
-    .setDescription('Remove EXP from a user (staff only).')
-    .addUserOption((opt) =>
-      opt
-        .setName('user')
-        .setDescription('User to remove EXP from.')
-        .setRequired(true),
-    )
-    .addIntegerOption((opt) =>
-      opt
-        .setName('amount')
-        .setDescription('Amount of EXP to remove.')
-        .setRequired(true)
-        .setMinValue(1),
-    ),
-  new SlashCommandBuilder()
-    .setName('editexp')
-    .setDescription('Set a user EXP total (staff only).')
-    .addUserOption((opt) =>
-      opt
-        .setName('user')
-        .setDescription('User to edit EXP for.')
-        .setRequired(true),
-    )
-    .addIntegerOption((opt) =>
-      opt
-        .setName('amount')
-        .setDescription('New EXP total.')
-        .setRequired(true)
-        .setMinValue(0),
-    ),
 ].map((cmd) => cmd.toJSON());
 
 // ---------------------------------------------------------------------------
@@ -401,7 +334,6 @@ client.once('ready', async () => {
   } catch (err) {
     console.error('Failed to register slash commands:', err.message);
   }
-  scheduleNextExpDrop();
   await ensureTicketPanel();
 });
 
@@ -436,24 +368,12 @@ async function handleSlashCommand(interaction) {
       return safeReply(interaction, { content: `Pong! ${Math.round(client.ws.ping)}ms` });
     }
 
-    case 'rank': {
-      const guildPoints = db.points[interaction.guildId] || {};
-      const points = guildPoints[interaction.user.id] || 0;
-      const sorted = Object.entries(guildPoints).sort((a, b) => b[1] - a[1]);
-      const rank = sorted.findIndex(([id]) => id === interaction.user.id) + 1;
-      const total = sorted.length;
-      const embed = new EmbedBuilder()
-        .setTitle('AeroPulse EXP Rank')
-        .setColor(0x5865f2)
-        .setDescription(`You have **${points}** EXP.`)
-        .addFields(
-          { name: 'Rank', value: rank ? `#${rank} of ${total}` : 'Unranked', inline: true },
-          { name: 'Server', value: guild.name, inline: true },
-        )
-        .setTimestamp();
-      return safeReply(interaction, { embeds: [embed] });
+    case 'close': {
+      if (interaction.channel.type !== ChannelType.GuildText) {
+        return safeReply(interaction, { content: 'This command can only be used in a ticket channel.' });
+      }
+      return handleTicketClose(interaction);
     }
-
     case 'ticket': {
       if (!member.permissionsIn(interaction.channel).has(PermissionFlagsBits.SendMessages)) {
         return safeReply(interaction, { content: 'I do not have permission to send messages here.' });
@@ -463,59 +383,13 @@ async function handleSlashCommand(interaction) {
     }
   }
 
-  // Staff-only commands (dm, avatar, checkexp, addexp, removeexp, editexp)
+  // Staff-only commands (dm, avatar)
   if (!hasAllowedRole(member)) {
     return safeReply(interaction, { content: 'You do not have permission to use this command.' });
   }
 
   try {
     switch (commandName) {
-      case 'checkexp': {
-        const targetUser = interaction.options.getUser('user', true);
-        const guildPoints = db.points[interaction.guildId] || {};
-        const points = guildPoints[targetUser.id] || 0;
-        return safeReply(interaction, { content: `${targetUser} has **${points}** EXP.` });
-      }
-
-      case 'addexp': {
-        const targetUser = interaction.options.getUser('user', true);
-        const amount = interaction.options.getInteger('amount', true);
-        const guildPoints = db.points[interaction.guildId] || {};
-        const current = guildPoints[targetUser.id] || 0;
-        const newTotal = current + amount;
-        guildPoints[targetUser.id] = newTotal;
-        db.points[interaction.guildId] = guildPoints;
-        await saveData();
-        await notifyExpRewards(targetUser, newTotal);
-        return safeReply(interaction, { content: `Added **${amount}** EXP to ${targetUser}. New total: **${newTotal}** EXP.` });
-      }
-
-      case 'removeexp': {
-        const targetUser = interaction.options.getUser('user', true);
-        const amount = interaction.options.getInteger('amount', true);
-        const guildPoints = db.points[interaction.guildId] || {};
-        const current = guildPoints[targetUser.id] || 0;
-        const newTotal = Math.max(0, current - amount);
-        guildPoints[targetUser.id] = newTotal;
-        db.points[interaction.guildId] = guildPoints;
-        await saveData();
-        return safeReply(interaction, { content: `Removed **${amount}** EXP from ${targetUser}. New total: **${newTotal}** EXP.` });
-      }
-
-      case 'editexp': {
-        const targetUser = interaction.options.getUser('user', true);
-        const amount = interaction.options.getInteger('amount', true);
-        const guildPoints = db.points[interaction.guildId] || {};
-        const current = guildPoints[targetUser.id] || 0;
-        guildPoints[targetUser.id] = amount;
-        db.points[interaction.guildId] = guildPoints;
-        await saveData();
-        if (amount > current) {
-          await notifyExpRewards(targetUser, amount);
-        }
-        return safeReply(interaction, { content: `Set ${targetUser} EXP to **${amount}**.` });
-      }
-
       case 'dm': {
         const targetUser = interaction.options.getUser('user', true);
         const message = interaction.options.getString('message', true);
@@ -569,16 +443,12 @@ async function handleSlashCommand(interaction) {
 }
 
 // ---------------------------------------------------------------------------
-// Buttons: ticket + EXP claim
+// Buttons: ticket
 // ---------------------------------------------------------------------------
 const TICKET_OPEN_IDS = ['ticket_report', 'ticket_support', 'ticket_creator'];
 
 async function handleButton(interaction) {
   try {
-    if (interaction.customId === 'exp_claim') {
-      return handleExpClaim(interaction);
-    }
-
     if (TICKET_OPEN_IDS.includes(interaction.customId)) {
       const category = interaction.customId.replace('ticket_', '');
       return showTicketModal(interaction, category);
@@ -739,7 +609,11 @@ async function handleTicketClose(interaction) {
     return safeReply(interaction, { content: 'You do not have permission to close this ticket.' });
   }
 
-  await interaction.deferUpdate();
+  if (interaction.isChatInputCommand()) {
+    await interaction.reply({ content: 'Closing ticket...', ephemeral: true });
+  } else {
+    await interaction.deferUpdate();
+  }
 
   let transcript = '';
   try {
@@ -987,128 +861,6 @@ async function handleModal(interaction) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// EXP system
-// ---------------------------------------------------------------------------
-function scheduleNextExpDrop() {
-  if (!EXP_CHANNEL_ID) return;
-  const now = Date.now();
-  const nextHour = new Date(now);
-  nextHour.setMinutes(0, 0, 0);
-  nextHour.setHours(nextHour.getHours() + 1);
-  // Random offset between 5 and 55 minutes within the hour
-  const randomOffset = Math.floor((5 + Math.random() * 50) * 60 * 1000);
-  const nextDrop = nextHour.getTime() + randomOffset;
-  const delay = nextDrop - now;
-
-  console.log(`Next EXP drop scheduled in ${Math.round(delay / 1000)}s`);
-  setTimeout(async () => {
-    await sendExpDrop();
-    scheduleNextExpDrop();
-  }, delay);
-}
-
-async function sendExpDrop() {
-  try {
-    const channel = await client.channels.fetch(EXP_CHANNEL_ID);
-    if (!channel || channel.type !== ChannelType.GuildText) return;
-
-    const points = Math.floor(Math.random() * 41) + 10; // 10-50
-    const embed = new EmbedBuilder()
-      .setTitle('EXP Drop!')
-      .setColor(0x57f287)
-      .setDescription('Be the first to click the button below and claim the EXP!')
-      .addFields({ name: 'Reward', value: `${points} EXP`, inline: true })
-      .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('exp_claim').setLabel('Claim').setStyle(ButtonStyle.Success),
-    );
-
-    const message = await channel.send({ embeds: [embed], components: [row] });
-    db.drops[message.id] = { points, sentAt: Date.now() };
-    await saveData();
-    console.log(`Sent EXP drop message ${message.id} worth ${points} EXP`);
-  } catch (err) {
-    console.error('EXP drop error:', err);
-  }
-}
-
-async function handleExpClaim(interaction) {
-  if (!inAllowedGuild(interaction.guildId)) {
-    return safeReply(interaction, { content: 'EXP drops are only available in the AeroPulse Studios server.' });
-  }
-
-  const messageId = interaction.message.id;
-  if (db.claims[messageId]) {
-    return interaction.reply({ content: 'This drop has already been claimed.', ephemeral: true });
-  }
-
-  if (!interaction.message.editable) {
-    return interaction.reply({ content: 'I cannot edit this drop message.', ephemeral: true });
-  }
-
-  const points = db.drops[messageId]?.points || Math.floor(Math.random() * 41) + 10;
-  const userId = interaction.user.id;
-  const guildId = interaction.guildId;
-
-  if (!db.points[guildId]) db.points[guildId] = {};
-  db.points[guildId][userId] = (db.points[guildId][userId] || 0) + points;
-  db.claims[messageId] = {
-    claimedBy: userId,
-    points,
-    claimedAt: Date.now(),
-  };
-  await saveData();
-
-  const claimedEmbed = new EmbedBuilder()
-    .setTitle('EXP Drop Claimed!')
-    .setColor(0x57f287)
-    .setDescription(`${interaction.user} claimed **${points}** EXP!`)
-    .addFields({ name: 'Total EXP', value: String(db.points[guildId][userId]), inline: true })
-    .setTimestamp();
-
-  const disabledRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('exp_claim')
-      .setLabel('Claimed')
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(true),
-  );
-
-  await interaction.update({ embeds: [claimedEmbed], components: [disabledRow] });
-  await interaction.followUp({ content: `You claimed **${points}** EXP!`, ephemeral: true });
-
-  await notifyExpRewards(interaction.user, db.points[guildId][userId]);
-}
-
-async function notifyExpRewards(user, total) {
-  try {
-    const guildId = ALLOWED_GUILD_ID;
-    db.expRewards[guildId] = db.expRewards[guildId] || {};
-    const rewards = db.expRewards[guildId][user.id] || [];
-
-    const thresholds = [
-      { amount: 1000, robux: 100 },
-      { amount: 5000, robux: 250 },
-    ];
-
-    for (const { amount, robux } of thresholds) {
-      if (total >= amount && !rewards.includes(String(amount))) {
-        rewards.push(String(amount));
-        await user.send(
-          `Congragulations ${user.username}, you have reached ${amount.toLocaleString()} EXP! ` +
-            `You can now cash out for ${robux} robux. If you wish to cash out your prize, please create a ticket inside of <#${TICKET_PANEL_CHANNEL_ID}>`,
-        );
-      }
-    }
-
-    db.expRewards[guildId][user.id] = rewards;
-    await saveData();
-  } catch (err) {
-    console.error('EXP reward notification error:', err.message);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Startup

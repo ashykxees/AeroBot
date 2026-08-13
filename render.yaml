@@ -28,7 +28,5 @@ services:
         sync: false
       - key: TICKET_CATEGORY_ID
         sync: false
-      - key: EXP_CHANNEL_ID
-        sync: false
       - key: TICKET_PANEL_CHANNEL_ID
         sync: false

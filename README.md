@@ -1,6 +1,6 @@
 # AeroBot
 
-AeroPulse Studios Discord bot with support tickets, Roblox avatars, and an hourly EXP drop/claim system. Moderation commands now live in AeroModeration.
+AeroPulse Studios Discord bot with support tickets and Roblox avatars. Moderation commands now live in AeroModeration.
 
 ## Setup
 
@@ -30,11 +30,7 @@ Replace `YOUR_APP_ID` with your bot’s Application ID from the Discord Develope
 
 - `/dm <user> <message>` — DM a user with an embed (staff roles only).
 - `/avatar <roblox-username>` — Show Roblox account info and avatar (staff roles only).
-- `/checkexp <user>` — Check a user's EXP total (staff roles only).
-- `/addexp <user> <amount>` — Add EXP to a user (staff roles only).
-- `/removeexp <user> <amount>` — Remove EXP from a user (staff roles only).
-- `/editexp <user> <amount>` — Set a user's EXP total (staff roles only).
-- `/rank` — Show your server EXP rank (open to all members).
+- `/close` — Close the current ticket channel, DM the opener a transcript, and post a transcript to the log channel (staff, claimer, or opener).
 - `/ping` — Show bot latency (open to all members).
 - `/ticket` — Post the support ticket panel (open to all members).
 
@@ -44,7 +40,7 @@ Required:
 - `DISCORD_TOKEN` — Bot token.
 
 Optional persistence:
-- `DATABASE_URL` — PostgreSQL connection URL. If set, EXP/ticket data is stored in Postgres and survives redeploys. Falls back to `data.json` locally if not set.
+- `DATABASE_URL` — PostgreSQL connection URL. If set, ticket data is stored in Postgres and survives redeploys. Falls back to `data.json` locally if not set.
 
 Optional (the guild and role defaults are already set to the AeroPulse server/roles):
 - `ALLOWED_GUILD_ID` (or `GUILD_ID`) — Server the bot operates in.
@@ -55,7 +51,6 @@ Optional (the guild and role defaults are already set to the AeroPulse server/ro
 - `ESCALATION_ROLE_ID` — Role pinged when a ticket is escalated (default: `1531860536193450174`).
 - `TICKET_LOG_CHANNEL_ID` — Channel where ticket close logs and transcripts are sent (default: `1533707432327381162`).
 - `TICKET_CATEGORY_ID` — Category for new ticket channels.
-- `EXP_CHANNEL_ID` — Channel for hourly EXP drops.
 - `TICKET_PANEL_CHANNEL_ID` — Channel where the ticket panel is auto-posted on startup (defaults to `1532222077480730744`).
 
 ## Hosting
@@ -80,7 +75,7 @@ If you already created the service and see a `go build` error, the service Runti
 2. Change **Runtime** to **Node**.
 3. Set **Build Command** to `npm install` (or leave it blank — Render detects `package.json`).
 4. Set **Start Command** to `npm start`.
-5. Make sure the environment variables from the screenshot are still present: `DISCORD_TOKEN`, `GUILD_ID`, `STAFF_ROLE_ID`, `TICKET_CATEGORY_ID`, `EXP_CHANNEL_ID`, `TICKET_PANEL_CHANNEL_ID`.
+5. Make sure the environment variables from the screenshot are still present: `DISCORD_TOKEN`, `GUILD_ID`, `STAFF_ROLE_ID`, `TICKET_CATEGORY_ID`, `TICKET_PANEL_CHANNEL_ID`.
 6. Click **Manual Deploy** → **Clear build cache & deploy**.
 
 The bot does not need a public port. A lightweight health server listens on `process.env.PORT || 3000` for hosts that expect one.
